@@ -119,10 +119,6 @@ VDW_RADII: Dict[str, float] = {
 }
 _VDW_FALLBACK = 1.70
 
-# Pairs closer than MAX_BOND_A are treated as bonded; excluded from clash check
-MAX_BOND_A = 1.70   # Å  (longest expected heavy-atom bond is C=O ~1.22 Å;
-                    #     we use 1.70 to also catch coordinatively bonded atoms)
-
 # Default clash scale: pair flagged when d < CLASH_SCALE * (r_i + r_j)
 CLASH_SCALE_DEFAULT = 0.75
 
@@ -203,23 +199,35 @@ def clear_qc_log() -> None:
 # Section 1 — InChI stereo-layer helpers
 # ===========================================================================
 
-def _stereo_layer(mol: Chem.Mol) -> str:
+def _stereo_layer(mol) -> str:
     """
-    Return the /t (tetrahedral stereo) layer of the InChI for *mol*, or ''
-    if the molecule has no defined stereocentres.
+    Return a stereo fingerprint for *mol* that captures both the /t
+    (tetrahedral stereo, atom parities) and /m (stereo parity flag) layers
+    of the InChI, concatenated.
 
-    The /t layer lists stereocentre atom numbers and their parity, e.g.
-    '/t2-,5+'.  Two molecules with identical /t layers have matching
-    stereo configurations at every enumerated centre.
+    Using /t alone is insufficient: for enantiomers of molecules with a
+    single stereocentre (e.g. L- vs D-alanine) the InChI standard keeps
+    the /t parity the same and distinguishes the pair via /m0 vs /m1.
+    Concatenating both layers gives a fingerprint that is unique per
+    enantiomer.
+
+    Returns '' if the molecule has no defined stereocentres.
     """
     try:
         inchi_str = rdInchi.MolToInchi(mol, options="")
         if inchi_str is None:
             return ""
-        for layer in inchi_str.split("/"):
-            if layer.startswith("t"):
-                return "/" + layer
-        return ""   # no /t layer → no defined stereocentres
+        layers = inchi_str.split("/")
+        t_layer = ""
+        m_layer = ""
+        for layer in layers:
+            if layer.startswith("t") and not t_layer:
+                t_layer = "/" + layer
+            elif layer.startswith("m") and not m_layer:
+                m_layer = "/" + layer
+        if not t_layer:
+            return ""   # no /t layer -> no defined stereocentres
+        return t_layer + m_layer   # e.g. "/t2-/m0" vs "/t2-/m1"
     except Exception:
         return ""
 
@@ -299,10 +307,20 @@ def check_clashes(
 
     A clash is reported when:
         d(i, j) < clash_scale * (vdw_i + vdw_j)
-    AND the pair is NOT bonded (d > MAX_BOND_A).
+    for a pair that is neither 1,2-bonded nor 1,3 (two bonds apart).
 
-    Only heavy atoms are checked (H atoms excluded because ETKDGv3 adds
-    idealised H positions that occasionally violate vdW radii for polar H).
+    Exclusion policy (standard MMFF / Amber convention):
+        1,2 pairs  — directly bonded: skip unconditionally.
+        1,3 pairs  — share a common bonded neighbour (e.g. C0...O2 in CCO):
+                     skip unconditionally.  These are constrained by bond
+                     angles and are always close; they are never clashes.
+        1,4+ pairs — apply the vdW clash threshold.
+
+    Pairs are identified from the molecular graph, not from distances,
+    so the function is robust to conformers with unusual geometry.
+
+    Only heavy atoms (atomic num > 1) are checked; idealised H positions
+    from ETKDGv3 are not included.
 
     Returns
     -------
@@ -311,7 +329,7 @@ def check_clashes(
     """
     conf = mol_with_conf.GetConformer()
 
-    # Collect heavy-atom indices and their 3D positions
+    # Collect heavy-atom indices
     heavy_idxs = [
         a.GetIdx()
         for a in mol_with_conf.GetAtoms()
@@ -320,38 +338,53 @@ def check_clashes(
     if len(heavy_idxs) < 2:
         return 0, []
 
-    positions = np.array([
-        [conf.GetAtomPosition(i).x,
-         conf.GetAtomPosition(i).y,
-         conf.GetAtomPosition(i).z]
-        for i in heavy_idxs
-    ], dtype=np.float64)
+    heavy_set = set(heavy_idxs)
 
-    symbols = [
-        mol_with_conf.GetAtomWithIdx(i).GetSymbol()
-        for i in heavy_idxs
-    ]
+    # Build the excluded set: all 1,2 and 1,3 heavy-atom pairs
+    excluded: set[tuple[int, int]] = set()
+    for ai in heavy_idxs:
+        atom_i = mol_with_conf.GetAtomWithIdx(ai)
+        for bond1 in atom_i.GetBonds():
+            aj = bond1.GetOtherAtomIdx(ai)
+            # 1,2 pair
+            excluded.add((min(ai, aj), max(ai, aj)))
+            # 1,3 pairs via aj
+            atom_j = mol_with_conf.GetAtomWithIdx(aj)
+            for bond2 in atom_j.GetBonds():
+                ak = bond2.GetOtherAtomIdx(aj)
+                if ak != ai:
+                    excluded.add((min(ai, ak), max(ai, ak)))
+
+    positions = {
+        idx: np.array([
+            conf.GetAtomPosition(idx).x,
+            conf.GetAtomPosition(idx).y,
+            conf.GetAtomPosition(idx).z,
+        ], dtype=np.float64)
+        for idx in heavy_idxs
+    }
 
     n = len(heavy_idxs)
     clash_descriptions: List[str] = []
 
     for ii in range(n):
         for jj in range(ii + 1, n):
-            diff = positions[ii] - positions[jj]
-            d = float(np.linalg.norm(diff))
+            ai = heavy_idxs[ii]
+            aj = heavy_idxs[jj]
 
-            # Skip bonded pairs
-            if d <= MAX_BOND_A:
+            # Skip 1,2 and 1,3 pairs
+            if (min(ai, aj), max(ai, aj)) in excluded:
                 continue
 
-            vdw_sum = _vdw(symbols[ii]) + _vdw(symbols[jj])
+            d = float(np.linalg.norm(positions[ai] - positions[aj]))
+            sym_i = mol_with_conf.GetAtomWithIdx(ai).GetSymbol()
+            sym_j = mol_with_conf.GetAtomWithIdx(aj).GetSymbol()
+            vdw_sum = _vdw(sym_i) + _vdw(sym_j)
             threshold = clash_scale * vdw_sum
 
             if d < threshold:
-                ai = heavy_idxs[ii]
-                aj = heavy_idxs[jj]
                 clash_descriptions.append(
-                    f"atom{ai}({symbols[ii]})--atom{aj}({symbols[jj]}): "
+                    f"atom{ai}({sym_i})--atom{aj}({sym_j}): "
                     f"d={d:.3f}A  vdw_sum={vdw_sum:.2f}A  "
                     f"threshold={threshold:.2f}A"
                 )

@@ -97,22 +97,32 @@ def ethanol_mol():
 @pytest.fixture
 def clashing_mol():
     """
-    Two carbon atoms at 0.5 Å — guaranteed to trigger the clash check.
-    Constructed by embedding ethane and then manually collapsing positions.
+    A molecule with two NON-BONDED heavy atoms collapsed to 0.5 Å apart,
+    guaranteed to trigger the clash check.
+
+    n-Butane (CCCC) is used: atoms 0 and 3 are a 1,4 pair — they share
+    no direct bond and no common bonded neighbour, so they are NOT in the
+    1,2/1,3 exclusion set and WILL be checked against the vdW threshold.
+    Placing them at 0.5 Å (well below 0.75 * 3.40 = 2.55 Å) guarantees
+    detection at any non-zero clash_scale.
+
+    Note: at clash_scale=0.0 the threshold is 0 * vdW_sum = 0 Å, and no
+    real distance can be negative, so n==0 — consistent with the
+    test_clash_scale_zero_never_flags test.
     """
-    mol = Chem.MolFromSmiles("CC")
+    mol = Chem.MolFromSmiles("CCCC")   # n-butane: 4 heavy atoms
     mol_h = Chem.AddHs(mol)
     params = AllChem.ETKDGv3()
     params.randomSeed = 42
     AllChem.EmbedMolecule(mol_h, params)
     mol_noh = Chem.RemoveHs(mol_h)
 
-    # Collapse heavy atoms 0 and 1 to 0.5 Å apart
+    # Collapse atoms 0 and 3 (the two terminal carbons, a 1,4 pair)
+    # to 0.5 Å apart. They are not bonded and not 1,3-related,
+    # so they will be checked by check_clashes.
     conf = mol_noh.GetConformer()
-    pos0 = np.array([0.0, 0.0, 0.0])
-    pos1 = np.array([0.5, 0.0, 0.0])
-    conf.SetAtomPosition(0, pos0)
-    conf.SetAtomPosition(1, pos1)
+    conf.SetAtomPosition(0, (0.0, 0.0, 0.0))
+    conf.SetAtomPosition(3, (0.5, 0.0, 0.0))
     return mol_noh
 
 
@@ -256,9 +266,20 @@ class TestCheckClashes:
         n, _ = check_clashes(clashing_mol, clash_scale=0.0)
         assert n == 0
 
-    def test_clash_scale_ten_flags_all_non_bonded(self, ethanol_mol):
-        """At scale=10.0 virtually all non-bonded pairs clash."""
-        n, _ = check_clashes(ethanol_mol, clash_scale=10.0)
+    def test_clash_scale_ten_flags_all_non_bonded(self):
+        """At scale=10.0 all 1,4+ pairs clash (threshold >> any real distance).
+
+        Uses n-butane (CCCC): atoms 0 and 3 are a 1,4 pair at ~3.7 Å in a
+        normal conformer. At scale=10.0 the threshold is 10 * 3.40 = 34 Å,
+        so d=3.7 < 34 is guaranteed to be flagged.
+        """
+        mol = Chem.MolFromSmiles("CCCC")
+        mol_h = Chem.AddHs(mol)
+        params = AllChem.ETKDGv3()
+        params.randomSeed = 42
+        AllChem.EmbedMolecule(mol_h, params)
+        butane = Chem.RemoveHs(mol_h)
+        n, _ = check_clashes(butane, clash_scale=10.0)
         assert n > 0
 
     def test_returns_tuple_of_int_and_list(self, ethanol_mol):
