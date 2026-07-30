@@ -191,10 +191,64 @@ LITERATURE: Dict[str, Dict[str, dict]] = {
             "citation":         "Hu et al. 2020 ICLR, 'Strategies for Pre-training GNNs'",
         },
     },
-    # TODO: fill in literature values for SchNet, DimeNet, Uni-Mol, AttentiveFP
-    # once the exact reference (paper, table, split) is confirmed.
-    "schnet":      {},
-    "dimenet":     {},
+    # SchNet: published on QM9 regression (Schutt et al. 2017/2018). MoleculeNet
+    # classification numbers exist in some leaderboard entries but the exact
+    # split, seed, and whether ETKDGv3 vs DFT geometries were used is not
+    # confirmed for the Flexi-JEGNN comparison — leaving None.
+    "schnet": {
+        "BACE": {
+            "original_roc_auc": None,   # [CITE: confirm table/split in Flexi-JEGNN paper]
+            "original_std":     None,
+            "split":            "scaffold",
+            "citation":         "Schutt et al. 2017 J. Chem. Phys. 148 241722, doi:10.1063/1.5019779",
+            "architecture_note": (
+                "Project uses GaussianSmearing(0,5,16 bins) over ETKDGv3 "
+                "distances. Original SchNet uses cosine-envelope RBF; results "
+                "may differ from the published values."
+            ),
+        },
+        "HIV": {
+            "original_roc_auc": None,   # [CITE: confirm table/split in Flexi-JEGNN paper]
+            "original_std":     None,
+            "split":            "scaffold",
+            "citation":         "Schutt et al. 2017 J. Chem. Phys. 148 241722, doi:10.1063/1.5019779",
+        },
+        "BBBP": {
+            "original_roc_auc": None,   # [CITE: confirm table/split in Flexi-JEGNN paper]
+            "original_std":     None,
+            "split":            "scaffold",
+            "citation":         "Schutt et al. 2017 J. Chem. Phys. 148 241722, doi:10.1063/1.5019779",
+        },
+    },
+    # DimeNet: published on QM9 regression (Klicpera et al. 2020 ICLR).
+    # MoleculeNet classification numbers exist in some works but the split
+    # variant (DimeNet vs DimeNet++) and whether ETKDGv3 conformers were
+    # used is not confirmed for the Flexi-JEGNN comparison.
+    "dimenet": {
+        "BACE": {
+            "original_roc_auc": None,   # [CITE: confirm DimeNet vs DimeNet++, table/split]
+            "original_std":     None,
+            "split":            "scaffold",
+            "citation":         "Klicpera et al. 2020 ICLR, arXiv:2003.03123",
+            "architecture_note": (
+                "Project DimeNetBlock uses RBF over distances only (no spherical "
+                "Bessel / angle terms). Label results as 'DimeNet-simplified' "
+                "when comparing to published numbers."
+            ),
+        },
+        "HIV": {
+            "original_roc_auc": None,   # [CITE: confirm DimeNet vs DimeNet++, table/split]
+            "original_std":     None,
+            "split":            "scaffold",
+            "citation":         "Klicpera et al. 2020 ICLR, arXiv:2003.03123",
+        },
+        "BBBP": {
+            "original_roc_auc": None,   # [CITE: confirm DimeNet vs DimeNet++, table/split]
+            "original_std":     None,
+            "split":            "scaffold",
+            "citation":         "Klicpera et al. 2020 ICLR, arXiv:2003.03123",
+        },
+    },
     "unimol":      {},
     "attentivefp": {},
 }
@@ -555,40 +609,100 @@ def run_schnet(
     datasets_dir: Path,
     level: int = 3,
     seeds: Optional[List[int]] = None,
-    **kwargs,
+    epochs: int = _EPOCHS_DEFAULT,
+    batch_size: int = 64,
+    lr: float = 1e-4,
 ) -> BenchmarkResult:
     """
-    Reproduce SchNet (Schütt et al. 2017 / 2018) baseline.
+    Reproduce SchNet (Schutt et al. 2017/2018) using the project's SchNet class.
 
-    TODO: implement.
+    Architecture (from experiments/classification.py, SchNetLayer + SchNet):
+      - Input embedding: Linear(IN_DIM, 256)
+      - 6 x SchNetLayer:
+          rbf_proj: Linear(16, 256)                   maps Gaussian RBF bins
+          W: Linear(256,256) -> ShiftedSoftplus -> Linear(256,256)
+          message: x_j * W(rbf_proj(rbf))
+          upd:  Linear(256,256) -> ShiftedSoftplus -> Linear(256,256)
+      - Residual connection (x = x + conv(x, ...))
+      - Global add pooling
+      - MLP: Linear(256,128) -> ShiftedSoftplus -> Dropout -> Linear(128,1)
 
-    What is needed before this can be filled in:
-      1. Confirm which SchNet paper and which dataset split the Flexi-JEGNN
-         paper's Table compares against (Schütt et al. 2017 JCP, Schütt et
-         al. 2018 J. Chem. Theory Comput., or a MoleculeNet leaderboard
-         entry).
-      2. SchNet requires 3-D coordinates → level must be 3 or 4.
-      3. The project's SchNetLayer in classification.py uses GaussianSmearing
-         over approximate distances.  Verify that this matches the published
-         architecture (continuous filter convolution with cosine envelopes in
-         the original vs. Gaussian RBF here).
-      4. The original SchNet uses a separate distance cutoff (5 Å, 10 Å) and
-         sinusoidal RBF — confirm the Gaussian approximation is acceptable or
-         add a flag to switch.
+    Geometry requirements:
+      level=3 is required (ETKDGv3 3-D conformer distances fed as the 16-bin
+      GaussianSmearing RBF in edge_attr[:,5:21]).  Levels 0-2 use proxy
+      distances that are not physically meaningful for a distance-based model.
 
-    Architecture available in MODEL_REGISTRY:
-      SchNet(node_dim=IN_DIM, hidden_dim=256, num_layers=6, dropout=0.3)
+    Architectural approximation note:
+      The published SchNet uses continuous-filter convolutions with cosine-
+      envelope radial basis functions and a distance cutoff (typically 5 or
+      10 Angstrom).  The project's SchNetLayer instead uses a fixed
+      GaussianSmearing(0, 5, 16) over ETKDGv3 pairwise distances with a
+      global cutoff tau=5 A applied during graph construction (level 3).
+      Results should be labelled "SchNet (Gaussian RBF approx.)" when
+      compared to published values in the revision.
 
-    Citation placeholder:
-      Schütt et al. 2017 J. Chem. Phys. 148 241722
-      doi: 10.1063/1.5019779
+    original_roc_auc is left None because the published SchNet numbers on
+    MoleculeNet classification vary by dataset split and geometry source
+    (ETKDGv3 vs DFT); the exact values used in the Flexi-JEGNN comparison
+    table must be confirmed before filling in LITERATURE.
+
+    Parameters
+    ----------
+    dataset_name : str
+        One of DATASETS.keys() (BACE, HIV, BBBP, ADMET).
+    datasets_dir : Path
+        Directory containing <dataset_name>.csv files.
+    level : int
+        Geometric fidelity level.  Must be 3 for physically meaningful
+        3-D distances.  Defaults to 3.
+    seeds : list of int or None
+        Random seeds to sweep.  Defaults to [42].
+    epochs : int
+        Maximum training epochs.
+    batch_size : int
+        Mini-batch size.
+    lr : float
+        Initial learning rate.
+
+    Returns
+    -------
+    BenchmarkResult
     """
-    # TODO: remove NotImplementedError and call _run_one_seed once the above
-    # questions are resolved.
-    raise NotImplementedError(
-        "run_schnet is a stub — see docstring for what is needed before "
-        "implementing.  Run with --model dmpnn or --model gin instead."
+    if level not in (3, 4):
+        import warnings
+        warnings.warn(
+            f"run_schnet called with level={level}. SchNet requires 3-D "
+            "distances (level=3). Proxy distances at lower levels are not "
+            "physically meaningful for this model.",
+            UserWarning,
+            stacklevel=2,
+        )
+    if not _HAS_EXPERIMENT_MODULE:
+        raise RuntimeError(
+            "Cannot import experiments/classification.py: "
+            f"{_EXP_IMPORT_ERROR}"
+        )
+
+    seeds = seeds or [42]
+    result = BenchmarkResult(
+        dataset=dataset_name,
+        model_key="schnet",
+        level=level,
+        **{k: v for k, v in LITERATURE.get("schnet", {})
+                                       .get(dataset_name, {}).items()
+           if k in ("original_roc_auc", "original_std", "citation")},
     )
+
+    for seed in seeds:
+        sr = _run_one_seed(
+            "schnet", dataset_name, datasets_dir, level, seed,
+            epochs=epochs, batch_size=batch_size, lr=lr,
+        )
+        result.seed_results.append(sr)
+
+    result.compute_aggregate()
+    result.timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    return result
 
 
 def run_dimenet(
@@ -596,36 +710,100 @@ def run_dimenet(
     datasets_dir: Path,
     level: int = 3,
     seeds: Optional[List[int]] = None,
-    **kwargs,
+    epochs: int = _EPOCHS_DEFAULT,
+    batch_size: int = 64,
+    lr: float = 1e-4,
 ) -> BenchmarkResult:
     """
-    Reproduce DimeNet (Klicpera et al. 2020) baseline.
+    Reproduce DimeNet (Klicpera et al. 2020) using the project's DimeNet class.
 
-    TODO: implement.
+    Architecture (from experiments/classification.py, DimeNetBlock + DimeNet):
+      - Input embedding: Linear(IN_DIM, 256) -> SiLU
+      - 4 x DimeNetBlock:
+          rbf_proj: Linear(16, 256)                   maps Gaussian RBF bins
+          msg_linear: Linear(512, 256)
+          message: SiLU(msg_linear(cat(x_j * rbf_proj(rbf), x_i)))
+          upd_linear: Linear(256, 256)
+          update: SiLU(upd_linear(aggr))
+      - LayerNorm residual after each block
+      - Global mean pooling
+      - MLP: Linear(256,256) -> SiLU -> Dropout -> Linear(256,1)
 
-    What is needed before this can be filled in:
-      1. The full DimeNet architecture uses directional message passing with
-         spherical Bessel functions and Fourier series for angle embeddings.
-         The project's DimeNetBlock in classification.py is a simplified
-         approximation (RBF over distances only, no angle terms).  Decide
-         whether the simplified version or the full DimeNet is the intended
-         comparison.
-      2. Confirm the published MoleculeNet ROC-AUC values for DimeNet++
-         (Klicpera et al. 2020, NeurIPS) vs DimeNet (ICLR 2020) — these
-         differ and the correct row must be identified.
-      3. level must be 3 (3-D ETKDGv3 conformer) for a meaningful comparison.
+    Geometry requirements:
+      level=3 is required (ETKDGv3 3-D conformer distances used as the
+      16-bin GaussianSmearing RBF in edge_attr[:,5:21]).  Levels 0-2 use
+      proxy distances that are not physically meaningful for DimeNet.
 
-    Architecture available in MODEL_REGISTRY:
-      DimeNet(node_dim=IN_DIM, hidden_dim=256, num_layers=4, dropout=0.3)
+    Architectural approximation note:
+      Published DimeNet uses directional message passing with spherical Bessel
+      functions for distances AND Fourier series for bond angles.  The project's
+      DimeNetBlock is a distance-only approximation (no angle terms, no Bessel
+      basis).  Results must be labelled "DimeNet (distance-only approx.)" when
+      compared to published values in the revision, and cannot be directly
+      compared to DimeNet++ (Klicpera et al. 2020 NeurIPS) which adds a
+      separate envelope function and scaled interaction blocks.
 
-    Citation placeholder:
-      Klicpera et al. 2020 ICLR "Directional Message Passing for Molecular Graphs"
-      arXiv: 2003.03123
+    original_roc_auc is left None because:
+      (a) DimeNet vs DimeNet++ numbers differ;
+      (b) the split variant and geometry source used in the Flexi-JEGNN paper
+          must be confirmed before filling in LITERATURE.
+
+    Parameters
+    ----------
+    dataset_name : str
+        One of DATASETS.keys() (BACE, HIV, BBBP, ADMET).
+    datasets_dir : Path
+        Directory containing <dataset_name>.csv files.
+    level : int
+        Geometric fidelity level.  Must be 3 for 3-D distances.  Defaults to 3.
+    seeds : list of int or None
+        Random seeds to sweep.  Defaults to [42].
+    epochs : int
+        Maximum training epochs.
+    batch_size : int
+        Mini-batch size.
+    lr : float
+        Initial learning rate.
+
+    Returns
+    -------
+    BenchmarkResult
     """
-    raise NotImplementedError(
-        "run_dimenet is a stub — see docstring for what is needed before "
-        "implementing."
+    if level not in (3, 4):
+        import warnings
+        warnings.warn(
+            f"run_dimenet called with level={level}. DimeNet requires 3-D "
+            "distances (level=3). Proxy distances at lower levels are not "
+            "physically meaningful for this model.",
+            UserWarning,
+            stacklevel=2,
+        )
+    if not _HAS_EXPERIMENT_MODULE:
+        raise RuntimeError(
+            "Cannot import experiments/classification.py: "
+            f"{_EXP_IMPORT_ERROR}"
+        )
+
+    seeds = seeds or [42]
+    result = BenchmarkResult(
+        dataset=dataset_name,
+        model_key="dimenet",
+        level=level,
+        **{k: v for k, v in LITERATURE.get("dimenet", {})
+                                       .get(dataset_name, {}).items()
+           if k in ("original_roc_auc", "original_std", "citation")},
     )
+
+    for seed in seeds:
+        sr = _run_one_seed(
+            "dimenet", dataset_name, datasets_dir, level, seed,
+            epochs=epochs, batch_size=batch_size, lr=lr,
+        )
+        result.seed_results.append(sr)
+
+    result.compute_aggregate()
+    result.timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    return result
 
 
 def run_unimol(
@@ -707,14 +885,14 @@ def run_attentivefp(
 _RUNNERS = {
     "dmpnn":       run_dmpnn,
     "gin":         run_gin,
-    "schnet":      run_schnet,       # TODO stub
-    "dimenet":     run_dimenet,      # TODO stub
+    "schnet":      run_schnet,
+    "dimenet":     run_dimenet,
     "unimol":      run_unimol,       # TODO stub
     "attentivefp": run_attentivefp,  # TODO stub
 }
 
-_WORKING_MODELS = {"dmpnn", "gin"}
-_TODO_MODELS    = {"schnet", "dimenet", "unimol", "attentivefp"}
+_WORKING_MODELS = {"dmpnn", "gin", "schnet", "dimenet"}
+_TODO_MODELS    = {"unimol", "attentivefp"}
 
 _BENCHMARK_DATASETS = ["BACE", "HIV", "BBBP"]   # core MoleculeNet classification
 
