@@ -176,22 +176,22 @@ LITERATURE: Dict[str, Dict[str, dict]] = {
             "original_roc_auc": None,          # [CITE: Hu et al. 2020 ICLR, Table 1, GIN no pre-train]
             "original_std":     None,
             "split":            "scaffold",
-            "citation":         "Hu et al. 2020 ICLR, 'Strategies for Pre-training GNNs'",
+            "citation":         "Xu et al. 2019 ICLR, 'How Powerful are Graph Neural Networks?', doi:10.48550/arXiv.1810.00826",
         },
         "HIV": {
             "original_roc_auc": None,          # [CITE: Hu et al. 2020 ICLR, Table 1, GIN no pre-train]
             "original_std":     None,
             "split":            "scaffold",
-            "citation":         "Hu et al. 2020 ICLR, 'Strategies for Pre-training GNNs'",
+            "citation":         "Xu et al. 2019 ICLR, 'How Powerful are Graph Neural Networks?', doi:10.48550/arXiv.1810.00826",
         },
         "BBBP": {
             "original_roc_auc": None,          # [CITE: Hu et al. 2020 ICLR, Table 1, GIN no pre-train]
             "original_std":     None,
             "split":            "scaffold",
-            "citation":         "Hu et al. 2020 ICLR, 'Strategies for Pre-training GNNs'",
+            "citation":         "Xu et al. 2019 ICLR, 'How Powerful are Graph Neural Networks?', doi:10.48550/arXiv.1810.00826",
         },
     },
-    # SchNet: published on QM9 regression (Schutt et al. 2017/2018). MoleculeNet
+    # SchNet: the manuscript cites schutt2018schnet (J. Chem. Phys. 148:241722,
     # classification numbers exist in some leaderboard entries but the exact
     # split, seed, and whether ETKDGv3 vs DFT geometries were used is not
     # confirmed for the Flexi-JEGNN comparison — leaving None.
@@ -200,7 +200,7 @@ LITERATURE: Dict[str, Dict[str, dict]] = {
             "original_roc_auc": None,   # [CITE: confirm table/split in Flexi-JEGNN paper]
             "original_std":     None,
             "split":            "scaffold",
-            "citation":         "Schutt et al. 2017 J. Chem. Phys. 148 241722, doi:10.1063/1.5019779",
+            "citation":         "Schutt et al. 2018 J. Chem. Phys. 148:241722, doi:10.1063/1.5019779",
             "architecture_note": (
                 "Project uses GaussianSmearing(0,5,16 bins) over ETKDGv3 "
                 "distances. Original SchNet uses cosine-envelope RBF; results "
@@ -211,13 +211,13 @@ LITERATURE: Dict[str, Dict[str, dict]] = {
             "original_roc_auc": None,   # [CITE: confirm table/split in Flexi-JEGNN paper]
             "original_std":     None,
             "split":            "scaffold",
-            "citation":         "Schutt et al. 2017 J. Chem. Phys. 148 241722, doi:10.1063/1.5019779",
+            "citation":         "Schutt et al. 2018 J. Chem. Phys. 148:241722, doi:10.1063/1.5019779",
         },
         "BBBP": {
             "original_roc_auc": None,   # [CITE: confirm table/split in Flexi-JEGNN paper]
             "original_std":     None,
             "split":            "scaffold",
-            "citation":         "Schutt et al. 2017 J. Chem. Phys. 148 241722, doi:10.1063/1.5019779",
+            "citation":         "Schutt et al. 2018 J. Chem. Phys. 148:241722, doi:10.1063/1.5019779",
         },
     },
     # DimeNet: published on QM9 regression (Klicpera et al. 2020 ICLR).
@@ -249,8 +249,63 @@ LITERATURE: Dict[str, Dict[str, dict]] = {
             "citation":         "Klicpera et al. 2020 ICLR, arXiv:2003.03123",
         },
     },
-    "unimol":      {},
-    "attentivefp": {},
+    # Uni-Mol: published with pre-trained transformer weights (Zhou et al. 2023
+    # ICLR). The UniMolLite class in classification.py has no pre-training,
+    # so the architecture is similar in form but the weights are random-init.
+    # Results must be labelled "Uni-Mol (no pre-train, simplified)"; comparison
+    # to the published pre-trained numbers is not directly valid.
+    "unimol": {
+        "BACE": {
+            "original_roc_auc": None,   # [CITE: Zhou et al. 2023 ICLR, Table 2 -- pre-trained variant]
+            "original_std":     None,
+            "split":            "scaffold",
+            "citation":         "Zhou et al. 2023 ChemRxiv (preprint v4), doi:10.26434/chemrxiv-2022-jjm0j-v4, https://chemrxiv.org/doi/abs/10.26434/chemrxiv-2022-jjm0j-v4",
+            "architecture_note": (
+                "Published Uni-Mol uses 209M-molecule ZINC pre-training. "
+                "UniMolLite here is randomly initialised; results are NOT "
+                "comparable to the published pre-trained numbers."
+            ),
+        },
+        "HIV": {
+            "original_roc_auc": None,   # [CITE: Zhou et al. 2023 ICLR, Table 2 -- pre-trained variant]
+            "original_std":     None,
+            "split":            "scaffold",
+            "citation":         "Zhou et al. 2023 ChemRxiv (preprint v4), doi:10.26434/chemrxiv-2022-jjm0j-v4, https://chemrxiv.org/doi/abs/10.26434/chemrxiv-2022-jjm0j-v4",
+        },
+        "BBBP": {
+            "original_roc_auc": None,   # [CITE: Zhou et al. 2023 ICLR, Table 2 -- pre-trained variant]
+            "original_std":     None,
+            "split":            "scaffold",
+            "citation":         "Zhou et al. 2023 ChemRxiv (preprint v4), doi:10.26434/chemrxiv-2022-jjm0j-v4, https://chemrxiv.org/doi/abs/10.26434/chemrxiv-2022-jjm0j-v4",
+        },
+    },
+    # AttentiveFP: Xiong et al. 2020 J. Med. Chem. uses RANDOM splits and
+    # 10-fold CV, not scaffold splits. Values are therefore not directly
+    # comparable to our scaffold-split results; leave None.
+    "attentivefp": {
+        "BACE": {
+            "original_roc_auc": None,   # [CITE: Xiong et al. 2020 Table 2 -- random split, not scaffold]
+            "original_std":     None,
+            "split":            "random (10-fold CV in original paper; we use scaffold)",
+            "citation":         "Xiong et al. 2020 J. Med. Chem. 63(16), doi:10.1021/acs.jmedchem.9b00959",
+            "architecture_note": (
+                "Original paper uses random 10-fold CV. Our scaffold-split "
+                "results are NOT directly comparable. Report separately."
+            ),
+        },
+        "HIV": {
+            "original_roc_auc": None,   # [CITE: not in Xiong et al. 2020; find a scaffold-split reference]
+            "original_std":     None,
+            "split":            "scaffold",
+            "citation":         "Xiong et al. 2020 J. Med. Chem. 63(16), doi:10.1021/acs.jmedchem.9b00959",
+        },
+        "BBBP": {
+            "original_roc_auc": None,   # [CITE: Xiong et al. 2020 Table 2 -- random split, not scaffold]
+            "original_std":     None,
+            "split":            "random (10-fold CV in original paper; we use scaffold)",
+            "citation":         "Xiong et al. 2020 J. Med. Chem. 63(16), doi:10.1021/acs.jmedchem.9b00959",
+        },
+    },
 }
 
 
@@ -806,43 +861,171 @@ def run_dimenet(
     return result
 
 
+# ---------------------------------------------------------------------------
+# AttentiveFP model wrapper + registration
+# ---------------------------------------------------------------------------
+# AttentiveFP is not in experiments/classification.py's MODEL_REGISTRY, so
+# we define a thin wrapper here and inject it into the shared dict at import
+# time if both torch_geometric and the experiment module are available.
+#
+# PyG's AttentiveFP (torch_geometric.nn.AttentiveFP) uses:
+#   in_channels  = IN_DIM  (18 atom features)
+#   hidden_channels = 256
+#   out_channels = 1
+#   edge_dim     = EDGE_DIM (21: 5 bond one-hots + 16 Gaussian RBF bins)
+#   num_layers   = 2   (graph attention layers)
+#   num_timesteps = 2  (GRU readout steps over the super-node)
+#   dropout      = 0.3
+#
+# The wrapper converts the project's forward(data) convention to PyG's
+# forward(x, edge_index, edge_attr, batch) convention.
+
+_HAS_ATTENTIVEFP = False
+
+try:
+    import torch.nn as _nn
+    from torch_geometric.nn import AttentiveFP as _PyGAttentiveFP
+
+    class _AttentiveFPWrapper(_nn.Module):
+        """
+        Thin wrapper around torch_geometric.nn.AttentiveFP that follows the
+        project's forward(data) -> scalar-per-graph convention.
+
+        Registered into MODEL_REGISTRY["AttentiveFP"] at module import time
+        so that _run_one_seed("attentivefp", ...) can build it the same way
+        as every other model.
+        """
+        def __init__(self):
+            super().__init__()
+            # Import constants lazily so the class can be defined even when
+            # classification.py is not importable.
+            try:
+                from experiments.classification import IN_DIM as _IN, EDGE_DIM as _ED
+            except Exception:
+                _IN, _ED = 18, 21      # project defaults if import fails
+            self.net = _PyGAttentiveFP(
+                in_channels=_IN,
+                hidden_channels=256,
+                out_channels=1,
+                edge_dim=_ED,
+                num_layers=2,
+                num_timesteps=2,
+                dropout=0.3,
+            )
+
+        def forward(self, data):
+            # PyG AttentiveFP.forward returns (batch_size, out_channels).
+            # Squeeze to (batch_size,) to match project convention.
+            return self.net(
+                data.x, data.edge_index, data.edge_attr, data.batch
+            ).squeeze(-1)
+
+    # Register into the shared MODEL_REGISTRY dict so _run_one_seed can find it.
+    if _HAS_EXPERIMENT_MODULE:
+        MODEL_REGISTRY["AttentiveFP"] = _AttentiveFPWrapper
+
+    _HAS_ATTENTIVEFP = True
+    _log.debug("torch_geometric.nn.AttentiveFP found — AttentiveFP runner enabled.")
+
+except ImportError:
+    _log.debug(
+        "torch_geometric.nn.AttentiveFP not available (PyG < 2.0 or torch not "
+        "installed). run_attentivefp will raise ImportError at call time."
+    )
+
+
 def run_unimol(
     dataset_name: str,
     datasets_dir: Path,
     level: int = 3,
     seeds: Optional[List[int]] = None,
-    **kwargs,
+    epochs: int = _EPOCHS_DEFAULT,
+    batch_size: int = 64,
+    lr: float = 1e-4,
 ) -> BenchmarkResult:
     """
-    Reproduce Uni-Mol (Zhou et al. 2023) baseline.
+    Reproduce Uni-Mol (Zhou et al. 2023) using the project's UniMolLite class.
 
-    TODO: implement.
+    Architecture (from experiments/classification.py, UniMolLite):
+      - Input projection: Linear(IN_DIM, 256)
+      - Pair bias projection: Linear(16, num_heads=8)  maps Gaussian RBF bins
+        to per-head attention biases (added to self-attention logits).
+      - 6 x TransformerEncoderLayer (d_model=256, nhead=8, ffn=512,
+        batch_first=True, norm_first=True -- pre-norm / "post-LN" style).
+      - Masked mean pooling over non-padding atom tokens.
+      - MLP: Linear(256,128) -> ReLU -> Dropout -> Linear(128,1)
 
-    What is needed before this can be filled in:
-      1. The published Uni-Mol uses pre-trained transformer weights (209M
-         parameter model trained on 209 M molecules from ZINC).  Reproducing
-         from scratch is not feasible.  Options:
-           a. Download the pre-trained weights from the official repo
-              (https://github.com/dptech-corp/Uni-Mol) and fine-tune.
-           b. Use the UniMolLite class in classification.py (no pre-training)
-              and clearly label results as "Uni-Mol (no pre-train, simplified)".
-      2. Confirm whether the Flexi-JEGNN paper compares against the pre-trained
-         or scratch variant, and whether ETKDGv3 conformers are acceptable
-         inputs (Uni-Mol was trained on CCSD(T)-level conformers).
-      3. level must be 3 (3-D coordinates required).
+    Geometry requirements:
+      level=3 is required. The pair-bias RBF (edge_attr[:,5:21]) encodes
+      pairwise distances; at lower levels these are proxy values that make
+      the attention bias physically meaningless.
 
-    Architecture available in MODEL_REGISTRY (simplified, no pre-training):
-      UniMolLite(node_dim=IN_DIM, hidden_dim=256, num_heads=8, num_layers=6)
+    Pre-training note -- IMPORTANT for the revision:
+      The published Uni-Mol (Zhou et al. 2023) uses transformer weights
+      pre-trained on 209 million molecules from ZINC (CCSD(T)-level
+      conformers). UniMolLite is randomly initialised and uses ETKDGv3
+      conformers. Results MUST be labelled "Uni-Mol (no pre-train,
+      simplified)" in all tables and cannot be compared numerically to the
+      published pre-trained numbers. The original_roc_auc field is therefore
+      left None in LITERATURE.
 
-    Citation placeholder:
-      Zhou et al. 2023 ICLR "Uni-Mol: A Universal 3D Molecular Representation
-      Learning Framework"
-      doi: 10.26434/chemrxiv-2022-jjm0j
+    Parameters
+    ----------
+    dataset_name : str
+        One of DATASETS.keys() (BACE, HIV, BBBP, ADMET).
+    datasets_dir : Path
+        Directory containing <dataset_name>.csv files.
+    level : int
+        Geometric fidelity level. Must be 3 for 3-D pair distances.
+        Defaults to 3.
+    seeds : list of int or None
+        Random seeds to sweep. Defaults to [42].
+    epochs : int
+        Maximum training epochs.
+    batch_size : int
+        Mini-batch size.
+    lr : float
+        Initial learning rate.
+
+    Returns
+    -------
+    BenchmarkResult
     """
-    raise NotImplementedError(
-        "run_unimol is a stub — see docstring for what is needed before "
-        "implementing."
+    if level not in (3, 4):
+        import warnings
+        warnings.warn(
+            f"run_unimol called with level={level}. Uni-Mol requires 3-D pair "
+            "distances (level=3). The attention pair-bias will be meaningless "
+            "with proxy distances at lower levels.",
+            UserWarning,
+            stacklevel=2,
+        )
+    if not _HAS_EXPERIMENT_MODULE:
+        raise RuntimeError(
+            "Cannot import experiments/classification.py: "
+            f"{_EXP_IMPORT_ERROR}"
+        )
+
+    seeds = seeds or [42]
+    result = BenchmarkResult(
+        dataset=dataset_name,
+        model_key="unimol",
+        level=level,
+        **{k: v for k, v in LITERATURE.get("unimol", {})
+                                       .get(dataset_name, {}).items()
+           if k in ("original_roc_auc", "original_std", "citation")},
     )
+
+    for seed in seeds:
+        sr = _run_one_seed(
+            "unimol", dataset_name, datasets_dir, level, seed,
+            epochs=epochs, batch_size=batch_size, lr=lr,
+        )
+        result.seed_results.append(sr)
+
+    result.compute_aggregate()
+    result.timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    return result
 
 
 def run_attentivefp(
@@ -850,32 +1033,108 @@ def run_attentivefp(
     datasets_dir: Path,
     level: int = 0,
     seeds: Optional[List[int]] = None,
-    **kwargs,
+    epochs: int = _EPOCHS_DEFAULT,
+    batch_size: int = 64,
+    lr: float = 1e-4,
 ) -> BenchmarkResult:
     """
-    Reproduce AttentiveFP (Xiong et al. 2020) baseline.
+    Reproduce AttentiveFP (Xiong et al. 2020) using PyG's AttentiveFP class.
 
-    TODO: implement.
+    Architecture (_AttentiveFPWrapper, registered into MODEL_REGISTRY at import):
+      torch_geometric.nn.AttentiveFP with:
+        in_channels     = IN_DIM  (18 atom features)
+        hidden_channels = 256
+        out_channels    = 1
+        edge_dim        = EDGE_DIM (21: 5 bond one-hots + 16 Gaussian RBF)
+        num_layers      = 2   (graph-level attention layers)
+        num_timesteps   = 2   (GRU super-node readout steps)
+        dropout         = 0.3
 
-    What is needed before this can be filled in:
-      1. AttentiveFP is NOT currently in MODEL_REGISTRY in classification.py.
-         The class must be added there, or implemented here, before this
-         runner can be used.
-      2. The published architecture uses graph attention with virtual nodes and
-         a separate super-node readout.  Confirm the exact variant (with or
-         without virtual atom).
-      3. Confirm the published MoleculeNet ROC-AUC values for AttentiveFP and
-         the split type used (Xiong et al. 2020 use random splits in the
-         original paper; later work sometimes reports scaffold splits).
+    The wrapper's forward(data) passes data.x, data.edge_index,
+    data.edge_attr, data.batch to PyG's AttentiveFP and squeezes the output
+    to match the project's scalar-per-graph convention.
 
-    Citation placeholder:
-      Xiong et al. 2020 J. Med. Chem. 63(16) 8749-8760
-      doi: 10.1021/acs.jmedchem.9b00959
+    Level note:
+      AttentiveFP is a 2-D model (level 0 or 1 recommended). The edge_attr
+      Gaussian RBF bins encode distances but the published AttentiveFP paper
+      does not use them; level=0 (hop-count proxy) or level=1 (bond-length
+      sum) are most faithful to the original. Defaults to 0.
+
+    Comparison note -- IMPORTANT for the revision:
+      Xiong et al. 2020 report results with RANDOM 10-fold CV splits, not
+      scaffold splits. Our scaffold-split numbers CANNOT be directly compared
+      to their Table 2. Present them in a separate column or footnote.
+      The original_roc_auc field is therefore left None in LITERATURE.
+
+    Availability:
+      Requires torch_geometric >= 2.0. If PyG < 2.0 is installed,
+      _HAS_ATTENTIVEFP is False and this function raises ImportError.
+
+    Parameters
+    ----------
+    dataset_name : str
+        One of DATASETS.keys() (BACE, HIV, BBBP, ADMET).
+    datasets_dir : Path
+        Directory containing <dataset_name>.csv files.
+    level : int
+        Geometric fidelity level. 0 or 1 recommended. Defaults to 0.
+    seeds : list of int or None
+        Random seeds to sweep. Defaults to [42].
+    epochs : int
+        Maximum training epochs.
+    batch_size : int
+        Mini-batch size.
+    lr : float
+        Initial learning rate.
+
+    Returns
+    -------
+    BenchmarkResult
+
+    Raises
+    ------
+    ImportError
+        If torch_geometric.nn.AttentiveFP is not available (PyG < 2.0).
+    RuntimeError
+        If experiments/classification.py cannot be imported.
     """
-    raise NotImplementedError(
-        "run_attentivefp is a stub — AttentiveFP is not in MODEL_REGISTRY yet. "
-        "See docstring for what is needed before implementing."
+    if not _HAS_ATTENTIVEFP:
+        raise ImportError(
+            "torch_geometric.nn.AttentiveFP is not available. "
+            "Upgrade PyTorch Geometric to >= 2.0: "
+            "pip install torch-geometric>=2.0"
+        )
+    if not _HAS_EXPERIMENT_MODULE:
+        raise RuntimeError(
+            "Cannot import experiments/classification.py: "
+            f"{_EXP_IMPORT_ERROR}"
+        )
+    if "AttentiveFP" not in MODEL_REGISTRY:
+        raise RuntimeError(
+            "AttentiveFP was not registered into MODEL_REGISTRY at import "
+            "time. This should not happen if _HAS_ATTENTIVEFP is True."
+        )
+
+    seeds = seeds or [42]
+    result = BenchmarkResult(
+        dataset=dataset_name,
+        model_key="attentivefp",
+        level=level,
+        **{k: v for k, v in LITERATURE.get("attentivefp", {})
+                                       .get(dataset_name, {}).items()
+           if k in ("original_roc_auc", "original_std", "citation")},
     )
+
+    for seed in seeds:
+        sr = _run_one_seed(
+            "attentivefp", dataset_name, datasets_dir, level, seed,
+            epochs=epochs, batch_size=batch_size, lr=lr,
+        )
+        result.seed_results.append(sr)
+
+    result.compute_aggregate()
+    result.timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -887,12 +1146,12 @@ _RUNNERS = {
     "gin":         run_gin,
     "schnet":      run_schnet,
     "dimenet":     run_dimenet,
-    "unimol":      run_unimol,       # TODO stub
-    "attentivefp": run_attentivefp,  # TODO stub
+    "unimol":      run_unimol,
+    "attentivefp": run_attentivefp,
 }
 
-_WORKING_MODELS = {"dmpnn", "gin", "schnet", "dimenet"}
-_TODO_MODELS    = {"unimol", "attentivefp"}
+_WORKING_MODELS = {"dmpnn", "gin", "schnet", "dimenet", "unimol", "attentivefp"}
+_TODO_MODELS    = set()   # all models implemented; no remaining stubs
 
 _BENCHMARK_DATASETS = ["BACE", "HIV", "BBBP"]   # core MoleculeNet classification
 
