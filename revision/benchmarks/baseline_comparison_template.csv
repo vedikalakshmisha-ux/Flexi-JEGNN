@@ -1,0 +1,19 @@
+model,dataset,metric,original_paper_value,reproduced_value,pct_diff,source_citation
+dmpnn,BACE,ROC-AUC (scaffold),,,,Yang et al. 2019 J. Chem. Inf. Model. 59(8) doi:10.1021/acs.jcim.9b00237
+dmpnn,HIV,ROC-AUC (scaffold),,,,Yang et al. 2019 J. Chem. Inf. Model. 59(8) doi:10.1021/acs.jcim.9b00237
+dmpnn,BBBP,ROC-AUC (scaffold),,,,Yang et al. 2019 J. Chem. Inf. Model. 59(8) doi:10.1021/acs.jcim.9b00237
+gin,BACE,ROC-AUC (scaffold),,,,Xu et al. 2019 ICLR doi:10.48550/arXiv.1810.00826
+gin,HIV,ROC-AUC (scaffold),,,,Xu et al. 2019 ICLR doi:10.48550/arXiv.1810.00826
+gin,BBBP,ROC-AUC (scaffold),,,,Xu et al. 2019 ICLR doi:10.48550/arXiv.1810.00826
+schnet,BACE,ROC-AUC (scaffold),,,,Schutt et al. 2018 J. Chem. Phys. 148:241722 doi:10.1063/1.5019779
+schnet,HIV,ROC-AUC (scaffold),,,,Schutt et al. 2018 J. Chem. Phys. 148:241722 doi:10.1063/1.5019779
+schnet,BBBP,ROC-AUC (scaffold),,,,Schutt et al. 2018 J. Chem. Phys. 148:241722 doi:10.1063/1.5019779
+dimenet,BACE,ROC-AUC (scaffold),,,,Klicpera et al. 2020 ICLR arXiv:2003.03123 https://openreview.net/forum?id=B1eWbxStPH
+dimenet,HIV,ROC-AUC (scaffold),,,,Klicpera et al. 2020 ICLR arXiv:2003.03123 https://openreview.net/forum?id=B1eWbxStPH
+dimenet,BBBP,ROC-AUC (scaffold),,,,Klicpera et al. 2020 ICLR arXiv:2003.03123 https://openreview.net/forum?id=B1eWbxStPH
+unimol,BACE,ROC-AUC (scaffold; original uses pre-trained weights — NOT directly comparable),,,,Zhou et al. 2023 ChemRxiv preprint v4 doi:10.26434/chemrxiv-2022-jjm0j-v4
+unimol,HIV,ROC-AUC (scaffold; original uses pre-trained weights — NOT directly comparable),,,,Zhou et al. 2023 ChemRxiv preprint v4 doi:10.26434/chemrxiv-2022-jjm0j-v4
+unimol,BBBP,ROC-AUC (scaffold; original uses pre-trained weights — NOT directly comparable),,,,Zhou et al. 2023 ChemRxiv preprint v4 doi:10.26434/chemrxiv-2022-jjm0j-v4
+attentivefp,BACE,ROC-AUC (original: random 10-fold CV — NOT comparable to our scaffold split),,,,Xiong et al. 2020 J. Med. Chem. 63(16) doi:10.1021/acs.jmedchem.9b00959
+attentivefp,HIV,ROC-AUC (scaffold; no original HIV value in Xiong et al. 2020),,,,Xiong et al. 2020 J. Med. Chem. 63(16) doi:10.1021/acs.jmedchem.9b00959
+attentivefp,BBBP,ROC-AUC (original: random 10-fold CV — NOT comparable to our scaffold split),,,,Xiong et al. 2020 J. Med. Chem. 63(16) doi:10.1021/acs.jmedchem.9b00959
