@@ -1,0 +1,41 @@
+# revision/data/.gitattributes
+# ==============================
+# Git LFS tracking rules for large binary/text files produced by the
+# Flexi-JEGNN revision pipeline.
+#
+# To initialise LFS in this repository (one-time setup):
+#   git lfs install
+#   git add revision/data/.gitattributes
+#   git commit -m "chore: add Git LFS tracking for SDF conformer files"
+#
+# After that, any *.sdf file added under this directory (or anywhere in the
+# repo, since Git LFS patterns match repo-wide) will be stored in LFS rather
+# than the normal object store.
+#
+# Typical SDF file sizes:
+#   BACE_ETKDGv3.sdf   ~  4 MB   (1,522 molecules)
+#   HIV_ETKDGv3.sdf    ~ 75 MB   (41,127 molecules)
+#   BBBP_ETKDGv3.sdf   ~  5 MB   (2,039 molecules)
+#   QM9_ETKDGv3.sdf    ~560 MB   (133,885 molecules)
+#   QM9_3_qc.sdf       ~560 MB   (133,885 molecules)
+# These exceed GitHub's 50 MB soft limit; LFS is required.
+
+# ---------------------------------------------------------------------------
+# SDF conformer files (all methods, all datasets)
+# ---------------------------------------------------------------------------
+*.sdf filter=lfs diff=lfs merge=lfs -text
+
+# ---------------------------------------------------------------------------
+# Related archive formats (QM9 XYZ bundle, if ever committed directly)
+# ---------------------------------------------------------------------------
+*.tar.bz2 filter=lfs diff=lfs merge=lfs -text
+*.tar.gz  filter=lfs diff=lfs merge=lfs -text
+*.gz      filter=lfs diff=lfs merge=lfs -text
+
+# ---------------------------------------------------------------------------
+# Numpy / PyTorch saved arrays (cached conformer matrices, if generated)
+# ---------------------------------------------------------------------------
+*.npy     filter=lfs diff=lfs merge=lfs -text
+*.npz     filter=lfs diff=lfs merge=lfs -text
+*.pt      filter=lfs diff=lfs merge=lfs -text
+*.pkl     filter=lfs diff=lfs merge=lfs -text
