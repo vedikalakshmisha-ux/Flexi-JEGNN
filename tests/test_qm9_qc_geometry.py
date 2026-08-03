@@ -105,6 +105,7 @@ _SMILES_H2O = 'O'
 
 def _make_tmp_dir_with_fixtures(tmp_path: Path) -> Path:
     """Write the three fixture .xyz files to a temp directory."""
+    tmp_path.mkdir(parents=True, exist_ok=True)  # fix: create dir before writing
     (tmp_path / 'dsgdb9nsd_000001.xyz').write_text(_CH4_XYZ)
     (tmp_path / 'dsgdb9nsd_000002.xyz').write_text(_NH3_XYZ)
     (tmp_path / 'dsgdb9nsd_000003.xyz').write_text(_H2O_XYZ)

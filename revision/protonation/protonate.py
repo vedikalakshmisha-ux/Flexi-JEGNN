@@ -250,6 +250,8 @@ def _formal_charge_summary(smiles: str) -> str:
     Return a compact charge fingerprint string for *smiles*, e.g.
     'N+1@2,O-1@5'.  Returns '' if RDKit is unavailable or SMILES is invalid.
     """
+    if not smiles:
+        return ""
     try:
         from rdkit import Chem  # type: ignore
         mol = Chem.MolFromSmiles(smiles)
