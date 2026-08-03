@@ -531,6 +531,13 @@ class TestMainCLI:
                    "--methods", METHOD_ETKDGv3])
         assert isinstance(rc, int)
 
+    def test_returns_one_on_missing_datasets_dir(self, tmp_path):
+        """main() must return 1 when --datasets-dir doesn't exist."""
+        missing = tmp_path / "no_such_dir"
+        rc = main(["--datasets-dir", str(missing),
+                   "--out-dir", str(tmp_path / "out")])
+        assert rc == 1
+
     def test_zero_on_no_datasets(self, tmp_path, monkeypatch):
         import revision.data.export_conformers as ecm
         monkeypatch.setattr(ecm, "rdkit_available", lambda: False)
@@ -543,6 +550,7 @@ class TestMainCLI:
                    "--datasets", "BACE",
                    "--methods", METHOD_ETKDGv3])
         assert isinstance(rc, int)
+
 
 
 # ============================================================================

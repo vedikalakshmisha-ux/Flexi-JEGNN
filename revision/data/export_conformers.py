@@ -686,6 +686,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             "[INFO] OpenBabel (obabel) not on PATH — 'obabel' method skipped.",
         )
 
+    if not datasets_dir.exists():
+        print(f"[ERROR] datasets_dir does not exist: {datasets_dir}", file=sys.stderr)
+        return 1
+
     print(f"\nDatasets dir : {datasets_dir}")
     print(f"Output dir   : {out_dir}")
     print(f"Methods      : {methods}")
@@ -718,7 +722,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"  Total records written: {total_written}")
     print("=" * 60 + "\n")
 
-    return 0 if total_written > 0 or not results else 1
+    return 0 if total_written > 0 else 1
 
 
 if __name__ == "__main__":

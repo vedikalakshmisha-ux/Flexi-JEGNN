@@ -390,8 +390,13 @@ class TestLoaderFromTar:
     )
     def test_positions_consistent_dir_vs_tar(self, tmp_path):
         """Positions from directory and tar backends should be identical."""
-        _make_tmp_dir_with_fixtures(tmp_path / 'dir')
-        dir_loader = QM9QCGeometryLoader(tmp_path / 'dir', verbose=False)
+        # tmp_path / 'dir' does not exist yet — must be created before writing
+        # .xyz fixtures into it. (Other tests pass tmp_path directly, which
+        # pytest guarantees already exists; this one used a subdirectory.)
+        dir_path = tmp_path / 'dir'
+        dir_path.mkdir()
+        _make_tmp_dir_with_fixtures(dir_path)
+        dir_loader = QM9QCGeometryLoader(dir_path, verbose=False)
         tar_path = _make_tmp_tar_with_fixtures(tmp_path)
         tar_loader = QM9QCGeometryLoader(tar_path, verbose=False)
 
@@ -399,6 +404,7 @@ class TestLoaderFromTar:
         pos_tar = tar_loader.get_positions(_SMILES_CH4, heavy_only=False)
         assert pos_dir is not None and pos_tar is not None
         np.testing.assert_allclose(pos_dir, pos_tar, atol=1e-6)
+
 
 
 # ============================================================================
