@@ -1,45 +1,54 @@
 """
 revision/benchmarks/qm9_geometry_comparison.py
 ===============================================
-Post-processing tool: read ``qm9_raw_seeds.csv`` (the output of
-``experiments/qm9.py``), extract rows at level 3 (ETKDGv3) and level 3_qc
-(DFT geometry from ``revision/geometry_qc/qm9_qc_level.py``), pair them by
-(model, seed), compute per-metric deltas, and write a paired comparison CSV.
+Compares geometry level 3 (RDKit ETKDGv3 + MMFF) vs level "3_qc"
+(original DFT B3LYP/6-31G(2df,p) from the QM9 .xyz bundle) for every
+model/seed combination present in both result files.
 
-**No training is run here.**  Training must already have been run with
-``experiments/qm9.py`` at both levels to populate the input CSV before calling
-this tool.
+Inputs
+------
+* A CSV with level-3 rows — default: ``results/qm9_raw_seeds.csv``
+  (same file written by ``experiments/qm9.py``).
+* A CSV with level-3_qc rows — default: the same ``qm9_raw_seeds.csv``
+  if level "3_qc" rows were appended there, OR a separate file produced
+  by running the pipeline with ``LEVEL_ID = "3_qc"`` from
+  ``revision/geometry_qc/qm9_qc_level.py``.  Pass ``--qc-csv`` to
+  specify a different file.
 
-Public API  (imported by tests/test_qm9_geometry_comparison.py)
----------------------------------------------------------------
-LEVEL_QC             str constant ``"3_qc"``
-LEVEL_RDKIT          str constant ``"3"``
-OUTPUT_COLUMNS       list[str] — column names for the comparison CSV
-_float_or_nan(v)     parse string/None → float; NaN on failure
-load_rows_for_level  read & index rows by (model, seed) for one level
-pair_rows            intersect rdkit/qc dicts and compute deltas
-write_comparison_csv write paired rows to a CSV file
-print_summary        print a human-readable comparison table
-main(argv)           CLI entry point; returns 0 on success, 1 on error
+Output
+------
+``qm9_geometry_comparison.csv`` — one row per (model, seed) pair with
+both sets of metrics side-by-side and signed deltas (qc − rdkit):
 
-Usage — CLI
------------
-python -m revision.benchmarks.qm9_geometry_comparison \\
-    --results-csv qm9_raw_seeds.csv \\
-    --out-csv     results/qm9_geometry_comparison.csv
+    model, seed,
+    rdkit_pearson_r, rdkit_mae, rdkit_rmse,
+    qc_pearson_r,    qc_mae,    qc_rmse,
+    delta_pearson_r, delta_mae, delta_rmse,
+    rdkit_ms_per_mol, qc_ms_per_mol,
+    rdkit_epochs_run, qc_epochs_run,
+    rdkit_stopped_early, qc_stopped_early,
+    rdkit_key, qc_key
 
-If level-3 and level-3_qc results live in *different* files, pass each path
-separately via ``--results-csv`` (level-3) and ``--qc-csv`` (level-3_qc).
+Usage
+-----
+    # Both level-3 and 3_qc in the same file:
+    python revision/benchmarks/qm9_geometry_comparison.py
 
-Output columns
---------------
-model, seed, rdkit_key, qc_key,
-rdkit_pearson_r, qc_pearson_r, delta_pearson_r,
-rdkit_mae,       qc_mae,       delta_mae,
-rdkit_rmse,      qc_rmse,      delta_rmse,
-rdkit_ms_per_mol, qc_ms_per_mol,
-rdkit_epochs_run, qc_epochs_run,
-rdkit_stopped_early, qc_stopped_early
+    # 3_qc results in a separate file:
+    python revision/benchmarks/qm9_geometry_comparison.py \\
+        --qc-csv results/qm9_3qc_seeds.csv
+
+    # Custom paths:
+    python revision/benchmarks/qm9_geometry_comparison.py \\
+        --results-csv results/qm9_raw_seeds.csv \\
+        --qc-csv     results/qm9_3qc_seeds.csv \\
+        --out-csv    results/qm9_geometry_comparison.csv
+
+Out of scope (teammate handles separately)
+------------------------------------------
+* Protonation pipeline          -> revision/protonation/
+* Conformer QC / validation     -> revision/conformer_qc/
+* Baseline benchmarks           -> revision/benchmarks/reproduce_baselines.py
 """
 
 from __future__ import annotations
@@ -48,399 +57,357 @@ import argparse
 import csv
 import math
 import sys
-import warnings
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
-# Public level-ID constants
+# Constants
 # ---------------------------------------------------------------------------
 
 LEVEL_RDKIT: str = "3"
-"""Level identifier for ETKDGv3 + MMFF geometry (experiments/qm9.py level 3)."""
-
 LEVEL_QC: str = "3_qc"
-"""Level identifier for DFT B3LYP/6-31G(2df,p) geometry (revision module)."""
 
-# ---------------------------------------------------------------------------
-# Output schema — must stay in sync with tests/test_qm9_geometry_comparison.py
-# ---------------------------------------------------------------------------
+METRIC_COLS = ("pearson_r", "mae", "rmse")
+PASS_THROUGH_COLS = ("ms_per_mol", "epochs_run", "stopped_early", "key")
 
 OUTPUT_COLUMNS: List[str] = [
-    "model", "seed",
-    "rdkit_key", "qc_key",
-    "rdkit_pearson_r", "qc_pearson_r", "delta_pearson_r",
-    "rdkit_mae",       "qc_mae",       "delta_mae",
-    "rdkit_rmse",      "qc_rmse",      "delta_rmse",
-    "rdkit_ms_per_mol", "qc_ms_per_mol",
-    "rdkit_epochs_run", "qc_epochs_run",
-    "rdkit_stopped_early", "qc_stopped_early",
+    "model",
+    "seed",
+    # RDKit-geometry metrics
+    "rdkit_pearson_r",
+    "rdkit_mae",
+    "rdkit_rmse",
+    # QC-geometry metrics
+    "qc_pearson_r",
+    "qc_mae",
+    "qc_rmse",
+    # Signed deltas: qc − rdkit  (positive = QC is better for r; worse for MAE/RMSE)
+    "delta_pearson_r",
+    "delta_mae",
+    "delta_rmse",
+    # Runtime / training diagnostics
+    "rdkit_ms_per_mol",
+    "qc_ms_per_mol",
+    "rdkit_epochs_run",
+    "qc_epochs_run",
+    "rdkit_stopped_early",
+    "qc_stopped_early",
+    # Source keys for full traceability
+    "rdkit_key",
+    "qc_key",
 ]
 
 
 # ---------------------------------------------------------------------------
-# Low-level helpers
+# I/O helpers
 # ---------------------------------------------------------------------------
 
-def _float_or_nan(v) -> float:
-    """
-    Convert *v* to ``float``; return ``NaN`` on failure, empty string, or
-    ``None``.
-
-    Parameters
-    ----------
-    v:
-        A string (e.g. from ``csv.DictReader``), ``None``, or any numeric type.
-
-    Returns
-    -------
-    float
-    """
-    if v is None:
-        return float("nan")
+def _float_or_nan(v: str) -> float:
+    """Parse a CSV value to float; return NaN on failure."""
     try:
-        s = str(v).strip()
-        if s == "":
-            return float("nan")
-        return float(s)
-    except (ValueError, TypeError):
-        return float("nan")
+        return float(v)
+    except (TypeError, ValueError):
+        return math.nan
 
 
-def _delta(a: float, b: float) -> float:
-    """Return ``b - a``; propagate ``NaN`` if either operand is ``NaN``."""
-    if math.isnan(a) or math.isnan(b):
-        return float("nan")
-    return b - a
-
-
-# ---------------------------------------------------------------------------
-# Core public functions
-# ---------------------------------------------------------------------------
-
-def load_rows_for_level(
-    csv_path,
-    level_id: str,
-) -> Dict[Tuple[str, str], dict]:
+def load_rows_for_level(csv_path: Path, level_id: str) -> Dict[Tuple[str, str], dict]:
     """
-    Read *csv_path* and return a ``dict`` keyed by ``(model, seed)``
-    containing only rows where the ``level_id`` column equals *level_id*.
+    Read *csv_path* and return a dict keyed by ``(model, seed)`` for all
+    rows whose ``level_id`` column matches *level_id*.
 
-    The expected CSV format is that written by ``experiments/qm9.py``::
-
-        key, pearson_r, mae, rmse, train_time, ms_per_mol, n_params,
-        epochs_run, stopped_early, dataset, model, level_id, seed
-
-    Parameters
-    ----------
-    csv_path:
-        Path (str or :class:`pathlib.Path`) to a ``qm9_raw_seeds.csv`` file.
-    level_id:
-        Geometry level to filter on, e.g. ``"3"`` or ``"3_qc"``.
-
-    Returns
-    -------
-    dict
-        Maps ``(model: str, seed: str)`` → ``row_dict``.  If a duplicate
-        ``(model, seed)`` pair is encountered the first occurrence is kept and
-        a :class:`UserWarning` is emitted.
-
-    Raises
-    ------
-    FileNotFoundError
-        If *csv_path* does not exist.
+    Raises ``FileNotFoundError`` if *csv_path* does not exist.
+    Raises ``ValueError`` if the file has no rows for *level_id*.
     """
-    csv_path = Path(csv_path)
     if not csv_path.exists():
         raise FileNotFoundError(f"Results CSV not found: {csv_path}")
 
-    result: Dict[Tuple[str, str], dict] = {}
+    rows: Dict[Tuple[str, str], dict] = {}
     with open(csv_path, newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
             if row.get("level_id", "").strip() != level_id:
                 continue
-            key = (row["model"].strip(), row["seed"].strip())
-            if key in result:
+            model = row.get("model", "").strip()
+            seed = row.get("seed", "").strip()
+            if not model or not seed:
+                continue
+            key = (model, seed)
+            if key in rows:
+                # Duplicate — keep first occurrence, warn
+                import warnings
                 warnings.warn(
-                    f"Duplicate (model={key[0]!r}, seed={key[1]!r}) at "
-                    f"level={level_id!r} in {csv_path.name}; "
-                    "keeping the first occurrence.",
-                    UserWarning,
+                    f"Duplicate (model={model}, seed={seed}) for level {level_id!r} "
+                    f"in {csv_path.name}; keeping first occurrence.",
                     stacklevel=2,
                 )
                 continue
-            result[key] = row
-    return result
+            rows[key] = row
+
+    return rows
 
 
 def pair_rows(
-    rdkit: Dict[Tuple[str, str], dict],
-    qc:    Dict[Tuple[str, str], dict],
+    rdkit_rows: Dict[Tuple[str, str], dict],
+    qc_rows: Dict[Tuple[str, str], dict],
 ) -> List[dict]:
     """
-    Intersect *rdkit* and *qc* dicts by ``(model, seed)``, compute deltas
-    (``qc_metric − rdkit_metric``), and return a sorted list of paired rows.
+    Join rdkit and qc row dicts on ``(model, seed)``.
 
-    Rows present in one dict but absent from the other are silently dropped
-    after printing a ``WARN`` line to ``stderr``.
-
-    Sorting: ``(model, int(seed))`` ascending.
-
-    Parameters
-    ----------
-    rdkit:
-        Index returned by ``load_rows_for_level(path, LEVEL_RDKIT)``.
-    qc:
-        Index returned by ``load_rows_for_level(path, LEVEL_QC)``.
-
-    Returns
-    -------
-    list[dict]
-        Each element has all keys from :data:`OUTPUT_COLUMNS`.
-        Numeric delta fields are ``float``; diagnostic pass-through fields
-        (``rdkit_ms_per_mol``, etc.) are ``float`` or ``str`` respectively.
+    Returns a list of paired comparison dicts, one per matched pair.
+    Unmatched keys are silently skipped (both sides logged to stderr).
     """
+    common_keys = sorted(
+        rdkit_rows.keys() & qc_rows.keys(),
+        key=lambda k: (k[0], int(k[1]) if k[1].isdigit() else k[1]),
+    )
+
+    only_rdkit = rdkit_rows.keys() - qc_rows.keys()
+    only_qc = qc_rows.keys() - rdkit_rows.keys()
+
+    if only_rdkit:
+        print(
+            f"  [WARN] {len(only_rdkit)} (model,seed) pair(s) have level-3 but no "
+            f"level-3_qc results — skipped:",
+            file=sys.stderr,
+        )
+        for k in sorted(only_rdkit):
+            print(f"         model={k[0]}, seed={k[1]}", file=sys.stderr)
+
+    if only_qc:
+        print(
+            f"  [WARN] {len(only_qc)} (model,seed) pair(s) have level-3_qc but no "
+            f"level-3 results — skipped:",
+            file=sys.stderr,
+        )
+        for k in sorted(only_qc):
+            print(f"         model={k[0]}, seed={k[1]}", file=sys.stderr)
+
     paired: List[dict] = []
-    rdkit_keys = set(rdkit)
-    qc_keys    = set(qc)
+    for model, seed in common_keys:
+        r = rdkit_rows[(model, seed)]
+        q = qc_rows[(model, seed)]
 
-    # Warn about unmatched keys in either direction
-    for k in sorted(rdkit_keys - qc_keys):
-        print(
-            f"WARN: (model={k[0]!r}, seed={k[1]!r}) has a level-3 row "
-            "but no level-3_qc counterpart — skipped.",
-            file=sys.stderr,
-        )
-    for k in sorted(qc_keys - rdkit_keys):
-        print(
-            f"WARN: (model={k[0]!r}, seed={k[1]!r}) has a level-3_qc row "
-            "but no level-3 counterpart — skipped.",
-            file=sys.stderr,
-        )
+        # Metrics
+        r_pr = _float_or_nan(r.get("pearson_r", ""))
+        r_mae = _float_or_nan(r.get("mae", ""))
+        r_rmse = _float_or_nan(r.get("rmse", ""))
 
-    common = rdkit_keys & qc_keys
-    for key in sorted(common, key=lambda k: (k[0], int(k[1]))):
-        r = rdkit[key]
-        q = qc[key]
+        q_pr = _float_or_nan(q.get("pearson_r", ""))
+        q_mae = _float_or_nan(q.get("mae", ""))
+        q_rmse = _float_or_nan(q.get("rmse", ""))
 
-        r_pr  = _float_or_nan(r.get("pearson_r"))
-        q_pr  = _float_or_nan(q.get("pearson_r"))
-        r_mae = _float_or_nan(r.get("mae"))
-        q_mae = _float_or_nan(q.get("mae"))
-        r_rms = _float_or_nan(r.get("rmse"))
-        q_rms = _float_or_nan(q.get("rmse"))
+        def _delta(a: float, b: float) -> float:
+            """b − a, propagating NaN."""
+            if math.isnan(a) or math.isnan(b):
+                return math.nan
+            return b - a
 
         paired.append({
-            "model":   key[0],
-            "seed":    key[1],
-            # original experiment-run keys for traceability
-            "rdkit_key": r.get("key", ""),
-            "qc_key":    q.get("key", ""),
-            # per-metric paired values + deltas
-            "rdkit_pearson_r":  r_pr,
-            "qc_pearson_r":     q_pr,
-            "delta_pearson_r":  _delta(r_pr, q_pr),
-            "rdkit_mae":        r_mae,
-            "qc_mae":           q_mae,
-            "delta_mae":        _delta(r_mae, q_mae),
-            "rdkit_rmse":       r_rms,
-            "qc_rmse":          q_rms,
-            "delta_rmse":       _delta(r_rms, q_rms),
-            # diagnostic pass-through fields
-            "rdkit_ms_per_mol":    _float_or_nan(r.get("ms_per_mol")),
-            "qc_ms_per_mol":       _float_or_nan(q.get("ms_per_mol")),
-            "rdkit_epochs_run":    r.get("epochs_run", ""),
-            "qc_epochs_run":       q.get("epochs_run", ""),
+            "model": model,
+            "seed": seed,
+            "rdkit_pearson_r": r_pr,
+            "rdkit_mae": r_mae,
+            "rdkit_rmse": r_rmse,
+            "qc_pearson_r": q_pr,
+            "qc_mae": q_mae,
+            "qc_rmse": q_rmse,
+            "delta_pearson_r": _delta(r_pr, q_pr),
+            "delta_mae": _delta(r_mae, q_mae),
+            "delta_rmse": _delta(r_rmse, q_rmse),
+            "rdkit_ms_per_mol": _float_or_nan(r.get("ms_per_mol", "")),
+            "qc_ms_per_mol": _float_or_nan(q.get("ms_per_mol", "")),
+            "rdkit_epochs_run": r.get("epochs_run", ""),
+            "qc_epochs_run": q.get("epochs_run", ""),
             "rdkit_stopped_early": r.get("stopped_early", ""),
-            "qc_stopped_early":    q.get("stopped_early", ""),
+            "qc_stopped_early": q.get("stopped_early", ""),
+            "rdkit_key": r.get("key", ""),
+            "qc_key": q.get("key", ""),
         })
 
     return paired
 
 
-def write_comparison_csv(paired: List[dict], out_path) -> None:
-    """
-    Write *paired* (list of dicts from :func:`pair_rows`) to *out_path*.
-
-    Parent directories are created automatically.  An empty *paired* list
-    results in a header-only file.
-
-    Parameters
-    ----------
-    paired:
-        List of dicts as returned by :func:`pair_rows`.
-    out_path:
-        Destination path (str or :class:`pathlib.Path`).
-    """
-    out_path = Path(out_path)
+def write_comparison_csv(paired: List[dict], out_path: Path) -> None:
+    """Write the paired comparison rows to *out_path*."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=OUTPUT_COLUMNS)
+        writer = csv.DictWriter(fh, fieldnames=OUTPUT_COLUMNS, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(paired)
 
 
+# ---------------------------------------------------------------------------
+# Summary printer
+# ---------------------------------------------------------------------------
+
 def print_summary(paired: List[dict]) -> None:
-    """
-    Print a human-readable geometry comparison summary to stdout.
-
-    Reports mean ± std of ``delta_pearson_r``, ``delta_mae``, and
-    ``delta_rmse`` overall and per model.  Handles an empty *paired* list
-    gracefully.
-
-    Parameters
-    ----------
-    paired:
-        List of dicts as returned by :func:`pair_rows`.
-    """
+    """Print a per-model aggregate summary to stdout."""
     if not paired:
         print("No paired rows to summarise.")
         return
 
-    def _stats(values: list):
-        vals = [v for v in values if not math.isnan(v)]
-        if not vals:
-            return float("nan"), float("nan")
-        n    = len(vals)
-        mean = sum(vals) / n
-        std  = math.sqrt(sum((v - mean) ** 2 for v in vals) / max(n - 1, 1))
-        return mean, std
+    # Group by model
+    by_model: Dict[str, List[dict]] = {}
+    for row in paired:
+        by_model.setdefault(row["model"], []).append(row)
 
-    print("\n" + "=" * 64)
-    print("QM9 Geometry Comparison: level 3 (ETKDGv3) vs 3_qc (DFT B3LYP)")
-    print("  delta = qc_metric - rdkit_metric")
-    print("  pearson_r: higher is better  (+delta = QC improved)")
-    print("  mae/rmse:  lower  is better  (-delta = QC improved)")
-    print("=" * 64)
+    print(f"\n{'=' * 72}")
+    print("QM9 geometry comparison: RDKit (level 3) vs QC DFT (level 3_qc)")
+    print(f"{'=' * 72}")
+    print(f"{'Model':<16} {'N':>4}  "
+          f"{'Δ Pearson_r':>12}  {'Δ MAE':>10}  {'Δ RMSE':>10}  "
+          f"{'QC better (r)':>14}")
+    print("-" * 72)
 
-    metrics = [
-        ("pearson_r", "delta_pearson_r"),
-        ("mae",       "delta_mae"),
-        ("rmse",      "delta_rmse"),
-    ]
-    for label, col in metrics:
-        mean, std = _stats([r[col] for r in paired])
-        n_valid = sum(1 for r in paired if not math.isnan(r[col]))
+    for model in sorted(by_model):
+        rows = by_model[model]
+        deltas_pr = [r["delta_pearson_r"] for r in rows if not math.isnan(r["delta_pearson_r"])]
+        deltas_mae = [r["delta_mae"] for r in rows if not math.isnan(r["delta_mae"])]
+        deltas_rmse = [r["delta_rmse"] for r in rows if not math.isnan(r["delta_rmse"])]
+
+        def _mean(lst):
+            return sum(lst) / len(lst) if lst else math.nan
+
+        mean_pr = _mean(deltas_pr)
+        mean_mae = _mean(deltas_mae)
+        mean_rmse = _mean(deltas_rmse)
+        n_better = sum(1 for d in deltas_pr if d > 0)  # higher r = better
+
         print(
-            f"  OVERALL  delta_{label:<10s} "
-            f"mean={mean:+.4f}  std={std:.4f}  (n={n_valid})"
+            f"{model:<16} {len(rows):>4}  "
+            f"{mean_pr:>+12.5f}  {mean_mae:>+10.5f}  {mean_rmse:>+10.5f}  "
+            f"{n_better:>6}/{len(deltas_pr):<6}"
         )
 
-    models = sorted({r["model"] for r in paired})
-    if len(models) > 1:
-        print()
-        for model in models:
-            rows_m   = [r for r in paired if r["model"] == model]
-            pr_m, pr_s = _stats([r["delta_pearson_r"] for r in rows_m])
-            mae_m, _   = _stats([r["delta_mae"]       for r in rows_m])
-            rms_m, _   = _stats([r["delta_rmse"]      for r in rows_m])
-            print(
-                f"  {model:<22s}  "
-                f"d_pearson_r={pr_m:+.4f}+/-{pr_s:.4f}  "
-                f"d_mae={mae_m:+.4f}  d_rmse={rms_m:+.4f}"
-            )
+    print("-" * 72)
+    all_pr = [r["delta_pearson_r"] for r in paired if not math.isnan(r["delta_pearson_r"])]
+    all_mae = [r["delta_mae"] for r in paired if not math.isnan(r["delta_mae"])]
+    all_rmse = [r["delta_rmse"] for r in paired if not math.isnan(r["delta_rmse"])]
 
-    print("=" * 64 + "\n")
+    def _mean(lst):
+        return sum(lst) / len(lst) if lst else math.nan
 
-
-# ---------------------------------------------------------------------------
-# CLI / main()
-# ---------------------------------------------------------------------------
-
-def main(argv: Optional[List[str]] = None) -> int:
-    """
-    CLI entry point.  Parse *argv* (or ``sys.argv[1:]``), run the comparison,
-    and return an exit code.
-
-    Parameters
-    ----------
-    argv:
-        List of CLI argument strings, or ``None`` to use ``sys.argv[1:]``.
-
-    Returns
-    -------
-    int
-        0 on success, 1 on any error or empty data.
-    """
-    # Force UTF-8 on Windows consoles
-    if hasattr(sys.stdout, "reconfigure"):
-        try:
-            sys.stdout.reconfigure(encoding="utf-8")
-            sys.stderr.reconfigure(encoding="utf-8")
-        except Exception:
-            pass
-
-    parser = argparse.ArgumentParser(
-        description=(
-            "Pair QM9 level-3 (ETKDGv3) and level-3_qc (DFT) rows from "
-            "qm9_raw_seeds.csv and write a geometry comparison CSV."
-        )
+    print(
+        f"{'OVERALL':<16} {len(paired):>4}  "
+        f"{_mean(all_pr):>+12.5f}  {_mean(all_mae):>+10.5f}  {_mean(all_rmse):>+10.5f}  "
+        f"{sum(1 for d in all_pr if d > 0):>6}/{len(all_pr):<6}"
     )
-    parser.add_argument(
+    print(f"{'=' * 72}\n")
+    print("  Δ = QC − RDKit  (positive Δ Pearson_r = QC geometry helps;")
+    print("                   negative Δ MAE/RMSE  = QC geometry helps)\n")
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        description=(
+            "Compare QM9 geometry level 3 (RDKit) vs 3_qc (DFT QC) metrics.\n\n"
+            "Both levels may live in the same CSV (default) or separate files."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p.add_argument(
         "--results-csv",
-        default="qm9_raw_seeds.csv",
+        default=None,
         help=(
-            "CSV file containing level-3 (and optionally level-3_qc) rows "
-            "(default: qm9_raw_seeds.csv)"
+            "CSV containing at minimum the level-3 rows. "
+            "Defaults to <repo_root>/results/qm9_raw_seeds.csv."
         ),
     )
-    parser.add_argument(
+    p.add_argument(
         "--qc-csv",
         default=None,
         help=(
-            "CSV file containing level-3_qc rows.  "
-            "Defaults to --results-csv when omitted."
+            "CSV containing the level-3_qc rows. "
+            "If omitted, the script looks in --results-csv for 3_qc rows."
         ),
     )
-    parser.add_argument(
+    p.add_argument(
         "--out-csv",
-        default="results/qm9_geometry_comparison.csv",
-        help="Output CSV path (default: results/qm9_geometry_comparison.csv)",
+        default=None,
+        help=(
+            "Output path for the comparison CSV. "
+            "Defaults to <repo_root>/results/qm9_geometry_comparison.csv."
+        ),
     )
-    parser.add_argument(
+    p.add_argument(
         "--no-summary",
         action="store_true",
-        help="Skip printing the summary table.",
+        help="Suppress the per-model summary table printed to stdout.",
     )
+    return p
 
+
+def _resolve_path(cli_arg: Optional[str], default_relative: str) -> Path:
+    if cli_arg:
+        return Path(cli_arg).expanduser().resolve()
+    here = Path(__file__).resolve().parent           # revision/benchmarks/
+    return here.parent.parent / default_relative     # repo/<default_relative>
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
 
-    results_csv = Path(args.results_csv)
-    qc_csv      = Path(args.qc_csv) if args.qc_csv else results_csv
-    out_csv     = Path(args.out_csv)
+    results_csv = _resolve_path(args.results_csv, "results/qm9_raw_seeds.csv")
+    qc_csv = _resolve_path(args.qc_csv, "results/qm9_raw_seeds.csv") if not args.qc_csv \
+        else Path(args.qc_csv).expanduser().resolve()
+    out_csv = _resolve_path(args.out_csv, "results/qm9_geometry_comparison.csv")
 
-    # Load both level sets
+    print(f"\nLevel-3 source  : {results_csv}")
+    print(f"Level-3_qc source: {qc_csv}")
+    print(f"Output          : {out_csv}")
+    print("-" * 60)
+
+    # Load
     try:
         rdkit_rows = load_rows_for_level(results_csv, LEVEL_RDKIT)
     except FileNotFoundError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
 
     try:
         qc_rows = load_rows_for_level(qc_csv, LEVEL_QC)
     except FileNotFoundError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
+
+    print(f"  Level-3 rows found   : {len(rdkit_rows)}")
+    print(f"  Level-3_qc rows found: {len(qc_rows)}")
 
     if not rdkit_rows:
         print(
-            f"ERROR: No level={LEVEL_RDKIT!r} rows found in {results_csv}.",
+            "[ERROR] No level-3 rows found. Has the QM9 experiment been run?",
             file=sys.stderr,
         )
         return 1
 
     if not qc_rows:
         print(
-            f"ERROR: No level={LEVEL_QC!r} rows found in {qc_csv}.",
+            "[ERROR] No level-3_qc rows found.\n"
+            "Run the QC geometry experiment first:\n"
+            "  from revision.geometry_qc.qm9_qc_level import featurize_qc, LEVEL_ID\n"
+            "Then append results to a CSV and pass it via --qc-csv.",
             file=sys.stderr,
         )
         return 1
 
+    # Pair
     paired = pair_rows(rdkit_rows, qc_rows)
-    write_comparison_csv(paired, out_csv)
-    print(f"[qm9_geometry_comparison] {len(paired)} paired rows -> {out_csv}")
+    print(f"  Matched pairs        : {len(paired)}")
 
+    if not paired:
+        print("[ERROR] No matched (model, seed) pairs — cannot produce comparison.", file=sys.stderr)
+        return 1
+
+    # Write
+    write_comparison_csv(paired, out_csv)
+    print(f"\n[OK] Written -> {out_csv}")
+
+    # Summary
     if not args.no_summary:
         print_summary(paired)
 
